@@ -1,0 +1,1982 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZTM Dashboard — Inventory Management</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  // ========================
+  // FIREBASE CONFIG
+  // Ganti dengan config Firebase project lo sendiri (gratis di firebase.google.com)
+  // ========================
+  const firebaseConfig = {
+    apiKey: "AIzaSyC3BoJpyI34MZGA5r7oJDMobQ6ZcMBqtFI",
+    authDomain: "ztm-inventory-dashboard.firebaseapp.com",
+    databaseURL: "https://ztm-inventory-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "ztm-inventory-dashboard",
+    storageBucket: "ztm-inventory-dashboard.firebasestorage.app",
+    messagingSenderId: "16258418235",
+    appId: "1:16258418235:web:44d050838cb24b063dbe1e"
+  };
+
+  let db = null;
+  let isConnected = false;
+
+  try {
+    const app = initializeApp(firebaseConfig);
+    db = getDatabase(app);
+
+    // Monitor connection
+    const connRef = ref(db, '.info/connected');
+    onValue(connRef, (snap) => {
+      isConnected = snap.val() === true;
+      updateConnectionUI(isConnected);
+      if (isConnected) {
+        // Load data from Firebase
+        loadFromFirebase();
+      }
+    });
+  } catch(e) {
+    console.warn("Firebase not configured, running in local mode:", e.message);
+    updateConnectionUI(false);
+  }
+
+  function updateConnectionUI(connected) {
+    const dot = document.getElementById('conn-dot');
+    const text = document.getElementById('conn-text');
+    if (!dot) return;
+    if (connected) {
+      dot.className = 'conn-dot connected';
+      text.textContent = 'Live · Firebase';
+    } else {
+      dot.className = 'conn-dot disconnected';
+      text.textContent = 'Offline · Local Only';
+    }
+  }
+
+  function loadFromFirebase() {
+    if (!db) return;
+    get(ref(db, 'ztm')).then(snap => {
+      if (snap.exists()) {
+        const data = snap.val();
+        if (data.materials) window.APP.materials = data.materials;
+        if (data.recipes) window.APP.recipes = data.recipes;
+        if (data.productionLog) window.APP.productionLog = data.productionLog;
+        window.APP.render();
+        window.APP.renderAll();
+      }
+    });
+
+    // Live sync
+    onValue(ref(db, 'ztm'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.val();
+        if (data.materials) window.APP.materials = data.materials;
+        if (data.recipes) window.APP.recipes = data.recipes;
+        if (data.productionLog) window.APP.productionLog = data.productionLog;
+        window.APP.renderAll();
+      }
+    });
+  }
+
+  window.saveToFirebase = function(path, data) {
+    if (!db || !isConnected) return;
+    set(ref(db, path), data);
+  };
+
+  window.firebaseReady = true;
+</script>
+
+<style>
+:root {
+  --yellow: #F5C800;
+  --yellow-light: #FFE566;
+  --yellow-dark: #C9A000;
+  --blue: #1255A0;
+  --blue-light: #1A72CC;
+  --blue-dark: #0A3A70;
+  --blue-pale: #E8F2FF;
+  --white: #FFFFFF;
+  --gray-50: #F8F9FA;
+  --gray-100: #F0F2F5;
+  --gray-200: #E2E6EA;
+  --gray-400: #9CA3AF;
+  --gray-600: #4B5563;
+  --gray-800: #1F2937;
+  --red: #DC2626;
+  --red-light: #FEE2E2;
+  --orange: #EA580C;
+  --orange-light: #FFF0E5;
+  --green: #16A34A;
+  --green-light: #DCFCE7;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.13);
+  --radius: 12px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Barlow', sans-serif;
+  background: var(--gray-100);
+  color: var(--gray-800);
+  min-height: 100vh;
+}
+
+/* ===== HEADER ===== */
+header {
+  background: linear-gradient(135deg, var(--blue-dark) 0%, var(--blue) 60%, var(--blue-light) 100%);
+  color: white;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  box-shadow: 0 2px 12px rgba(10,58,112,0.25);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-brand .logo-badge {
+  background: var(--yellow);
+  color: var(--blue-dark);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 1px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.header-brand h1 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+.header-brand h1 span {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.7;
+  display: block;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.conn-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.conn-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.conn-dot.connected { background: #4ADE80; box-shadow: 0 0 6px #4ADE80; animation: pulse-green 2s infinite; }
+.conn-dot.disconnected { background: #F87171; }
+
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ===== TABS ===== */
+.tabs-bar {
+  background: var(--white);
+  border-bottom: 2px solid var(--gray-200);
+  padding: 0 28px;
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--gray-400);
+  padding: 14px 18px 12px;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+.tab-btn:hover { color: var(--blue); }
+.tab-btn.active {
+  color: var(--blue);
+  border-bottom-color: var(--yellow);
+}
+
+/* ===== MAIN CONTENT ===== */
+main { padding: 24px 28px; max-width: 1400px; margin: 0 auto; }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ===== SECTION HEADER ===== */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.section-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--blue-dark);
+  letter-spacing: 0.5px;
+}
+
+/* ===== BUTTONS ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  font-family: 'Barlow', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--yellow);
+  color: var(--blue-dark);
+  box-shadow: 0 2px 8px rgba(197,160,0,0.3);
+}
+.btn-primary:hover { background: var(--yellow-dark); transform: translateY(-1px); }
+
+.btn-blue {
+  background: var(--blue);
+  color: white;
+  box-shadow: 0 2px 8px rgba(18,85,160,0.25);
+}
+.btn-blue:hover { background: var(--blue-dark); }
+
+.btn-danger { background: var(--red); color: white; }
+.btn-danger:hover { background: #B91C1C; }
+
+.btn-ghost {
+  background: var(--gray-100);
+  color: var(--gray-600);
+  border: 1px solid var(--gray-200);
+}
+.btn-ghost:hover { background: var(--gray-200); }
+
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ===== CARDS ===== */
+.card {
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--gray-200);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--gray-50);
+}
+
+.card-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--blue-dark);
+  letter-spacing: 0.3px;
+}
+
+/* ===== OVERVIEW STATS ===== */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 20px;
+  border: 1px solid var(--gray-200);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+}
+.stat-card.yellow::before { background: var(--yellow); }
+.stat-card.blue::before { background: var(--blue); }
+.stat-card.green::before { background: var(--green); }
+.stat-card.red::before { background: var(--red); }
+.stat-card.orange::before { background: var(--orange); }
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--gray-400);
+  margin-bottom: 6px;
+}
+
+.stat-value {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--blue-dark);
+  line-height: 1;
+}
+
+.stat-sub {
+  font-size: 12px;
+  color: var(--gray-400);
+  margin-top: 4px;
+}
+
+/* ===== TABLE ===== */
+.table-wrap { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th {
+  background: var(--blue-dark);
+  color: white;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 11px 14px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th.check-col { width: 40px; text-align: center; }
+
+td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--gray-100);
+  vertical-align: middle;
+}
+
+tr:hover td { background: var(--blue-pale); }
+tr.selected td { background: #FFF9E6; }
+
+.stock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.stock-ok { background: var(--green-light); color: var(--green); }
+.stock-low { background: var(--orange-light); color: var(--orange); }
+.stock-out { background: var(--red-light); color: var(--red); }
+
+.progress-bar-wrap {
+  background: var(--gray-200);
+  border-radius: 4px;
+  height: 6px;
+  width: 100px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s;
+}
+
+/* ===== FORMS ===== */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  padding: 20px;
+}
+
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 9px 12px;
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font-family: 'Barlow', sans-serif;
+  font-size: 14px;
+  color: var(--gray-800);
+  transition: border-color 0.2s;
+  background: white;
+}
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--blue-light);
+  box-shadow: 0 0 0 3px rgba(26,114,204,0.1);
+}
+
+/* ===== MODAL ===== */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(10,20,50,0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(3px);
+}
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background: white;
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  animation: modal-in 0.2s ease;
+}
+@keyframes modal-in {
+  from { transform: scale(0.95) translateY(10px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--gray-200);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, var(--blue-dark), var(--blue));
+  color: white;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.modal-header h3 {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.modal-close {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: white;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.2s;
+}
+.modal-close:hover { background: rgba(255,255,255,0.25); }
+
+.modal-body { padding: 22px; }
+.modal-footer {
+  padding: 16px 22px;
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* ===== RECIPE EDITOR ===== */
+.recipe-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 80px auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.recipe-rows-wrap { margin-bottom: 12px; }
+
+/* ===== PRODUCTION FORM ===== */
+.prod-row {
+  display: grid;
+  grid-template-columns: 1fr 100px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+/* ===== ESTIMATION TABLE ===== */
+.est-table th { background: var(--yellow-dark); color: var(--blue-dark); }
+
+/* ===== ALERT BANNER ===== */
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 16px;
+}
+.alert-warning { background: var(--orange-light); color: var(--orange); border: 1px solid #FED7AA; }
+.alert-danger { background: var(--red-light); color: var(--red); border: 1px solid #FECACA; }
+.alert-success { background: var(--green-light); color: var(--green); border: 1px solid #BBF7D0; }
+
+/* ===== TOAST ===== */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--blue-dark);
+  color: white;
+  padding: 12px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: var(--shadow-lg);
+  z-index: 9999;
+  display: none;
+  animation: toast-in 0.3s ease;
+  border-left: 4px solid var(--yellow);
+}
+@keyframes toast-in {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ===== BULK EDIT BAR ===== */
+#bulk-edit-bar {
+  position: sticky;
+  bottom: 16px;
+  background: var(--blue-dark);
+  color: white;
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  display: none;
+  align-items: center;
+  gap: 16px;
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+#bulk-edit-bar.visible { display: flex; }
+
+#bulk-edit-bar .bulk-count {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  background: var(--yellow);
+  color: var(--blue-dark);
+  padding: 3px 10px;
+  border-radius: 6px;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  header { padding: 0 16px; }
+  main { padding: 16px; }
+  .tabs-bar { padding: 0 16px; overflow-x: auto; }
+}
+
+/* ===== EMPTY STATE ===== */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--gray-400);
+}
+.empty-state .empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+.empty-state p { font-size: 15px; }
+
+/* ===== CATEGORY CHIP ===== */
+.chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--blue-pale);
+  color: var(--blue);
+}
+
+.section-divider {
+  border: none;
+  border-top: 2px solid var(--gray-200);
+  margin: 24px 0;
+}
+
+.tag-yellow { background: #FFF9C4; color: #92680A; }
+
+/* ===== PRODUCTION LOG ===== */
+.log-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+.log-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--blue);
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-brand">
+    <div class="logo-badge">ZTM</div>
+    <h1>Inventory Dashboard
+      <span>Clean Smarter &amp; Live Better</span>
+    </h1>
+  </div>
+  <div class="conn-badge">
+    <div id="conn-dot" class="conn-dot disconnected"></div>
+    <span id="conn-text">Connecting…</span>
+  </div>
+</header>
+
+<!-- TABS -->
+<div class="tabs-bar">
+  <button class="tab-btn active" onclick="switchTab('overview')">📊 Overview</button>
+  <button class="tab-btn" onclick="switchTab('materials')">🧪 Bahan &amp; Packaging</button>
+  <button class="tab-btn" onclick="switchTab('recipes')">📋 Resep Produk</button>
+  <button class="tab-btn" onclick="switchTab('production')">🏭 Input Produksi</button>
+  <button class="tab-btn" onclick="switchTab('estimation')">🔮 Estimasi Stok</button>
+</div>
+
+<!-- MAIN -->
+<main>
+
+  <!-- ======= OVERVIEW ======= -->
+  <div id="tab-overview" class="tab-panel active">
+    <div class="section-header">
+      <div class="section-title">Ringkasan Stok</div>
+      <button class="btn btn-ghost btn-sm" onclick="renderAll()">🔄 Refresh</button>
+    </div>
+
+    <div class="stats-grid" id="stats-grid">
+      <!-- rendered by JS -->
+    </div>
+
+    <div id="low-stock-alerts"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Semua Bahan &amp; Packaging — Cepat</div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Nama Bahan / Item</th>
+              <th>Kategori</th>
+              <th>Stok Saat Ini</th>
+              <th>Satuan</th>
+              <th>Min. Aman</th>
+              <th>Status</th>
+              <th>Visual</th>
+            </tr>
+          </thead>
+          <tbody id="overview-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= MATERIALS ======= -->
+  <div id="tab-materials" class="tab-panel">
+    <div class="section-header">
+      <div class="section-title">Bahan Baku &amp; Packaging</div>
+      <div class="btn-group">
+        <button class="btn btn-ghost btn-sm" id="btn-select-all" onclick="toggleSelectAll()">☑ Pilih Semua</button>
+        <button class="btn btn-primary" onclick="openAddMaterial()">+ Tambah Item</button>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+      <input type="text" id="mat-search" placeholder="🔍 Cari item..." style="padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:14px;min-width:200px;" oninput="renderMaterialsTable()">
+      <select id="mat-cat-filter" style="padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:14px;" onchange="renderMaterialsTable()">
+        <option value="">Semua Kategori</option>
+        <option value="Bahan Baku">Bahan Baku</option>
+        <option value="Botol">Botol / Kemasan</option>
+        <option value="Stiker">Stiker / Label</option>
+        <option value="Parfum">Bibit Parfum</option>
+        <option value="Packaging">Packaging</option>
+        <option value="Lainnya">Lainnya</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="check-col"><input type="checkbox" id="check-all-mat" onchange="toggleAllCheckboxes(this)"></th>
+              <th>Nama Item</th>
+              <th>Kategori</th>
+              <th>Stok</th>
+              <th>Satuan</th>
+              <th>Stok Min. Aman</th>
+              <th>Harga Satuan</th>
+              <th>Status</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="materials-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- BULK EDIT BAR -->
+    <div id="bulk-edit-bar">
+      <span class="bulk-count" id="bulk-count-label">0 dipilih</span>
+      <span style="font-size:13px;opacity:0.8;">Edit massal untuk item terpilih:</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <label style="font-size:13px;">Stok baru:</label>
+        <input type="number" id="bulk-stock-val" placeholder="Angka" min="0" style="width:90px;padding:6px 8px;border-radius:6px;border:none;font-size:13px;">
+        <label style="font-size:13px;">Min. aman:</label>
+        <input type="number" id="bulk-min-val" placeholder="Angka" min="0" style="width:90px;padding:6px 8px;border-radius:6px;border:none;font-size:13px;">
+        <button class="btn btn-primary btn-sm" onclick="applyBulkEdit()">✓ Terapkan</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearSelection()" style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);">✕ Batal</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= RECIPES ======= -->
+  <div id="tab-recipes" class="tab-panel">
+    <div class="section-header">
+      <div class="section-title">Resep / BOM Produk</div>
+      <button class="btn btn-primary" onclick="openAddRecipe()">+ Tambah Resep</button>
+    </div>
+
+    <div id="recipes-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;"></div>
+  </div>
+
+  <!-- ======= PRODUCTION ======= -->
+  <div id="tab-production" class="tab-panel">
+    <div class="section-header">
+      <div class="section-title">Input Produksi Hari Ini</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;" class="prod-layout">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Catat Produksi</div></div>
+        <div style="padding:20px;">
+          <div class="form-group" style="margin-bottom:14px;">
+            <label>Tanggal Produksi</label>
+            <input type="date" id="prod-date">
+          </div>
+          <div class="form-group" style="margin-bottom:14px;">
+            <label>Catatan (opsional)</label>
+            <input type="text" id="prod-note" placeholder="e.g. Batch 01">
+          </div>
+          <div id="prod-rows"><!-- JS --></div>
+          <button class="btn btn-ghost btn-sm" onclick="addProdRow()" style="margin-bottom:16px;">+ Tambah Produk</button>
+          <div id="prod-preview" style="background:var(--gray-50);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;display:none;">
+            <strong style="display:block;margin-bottom:8px;color:var(--blue-dark);">Preview pengurangan stok:</strong>
+            <div id="prod-preview-content"></div>
+          </div>
+          <button class="btn btn-blue" onclick="submitProduction()" style="width:100%;">✓ Simpan &amp; Kurangi Stok</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">Log Produksi</div></div>
+        <div style="padding:16px 20px;max-height:500px;overflow-y:auto;" id="production-log">
+          <div class="empty-state"><div class="empty-icon">📦</div><p>Belum ada log produksi</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= ESTIMATION ======= -->
+  <div id="tab-estimation" class="tab-panel">
+    <div class="section-header">
+      <div class="section-title">Estimasi: Bisa Bikin Apa Aja &amp; Berapa?</div>
+      <button class="btn btn-ghost btn-sm" onclick="renderEstimation()">🔄 Hitung Ulang</button>
+    </div>
+    <p style="color:var(--gray-600);font-size:14px;margin-bottom:20px;">Berdasarkan stok bahan baku &amp; packaging saat ini, berikut estimasi jumlah produk yang bisa dibuat:</p>
+    <div id="estimation-content"></div>
+  </div>
+
+</main>
+
+<!-- ====== MODAL: TAMBAH/EDIT MATERIAL ====== -->
+<div class="modal-overlay" id="modal-material">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-mat-title">Tambah Item Bahan / Packaging</h3>
+      <button class="modal-close" onclick="closeModal('modal-material')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>Nama Item *</label>
+          <input type="text" id="mat-name" placeholder="e.g. Botol 250ml Bening">
+        </div>
+        <div class="form-group">
+          <label>Kategori *</label>
+          <select id="mat-category">
+            <option value="Bahan Baku">Bahan Baku</option>
+            <option value="Botol">Botol / Kemasan</option>
+            <option value="Stiker">Stiker / Label</option>
+            <option value="Parfum">Bibit Parfum</option>
+            <option value="Packaging">Packaging</option>
+            <option value="Lainnya">Lainnya</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Satuan *</label>
+          <input type="text" id="mat-unit" placeholder="e.g. pcs, kg, liter, ml">
+        </div>
+        <div class="form-group">
+          <label>Stok Saat Ini *</label>
+          <input type="number" id="mat-stock" min="0" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>Stok Minimum Aman</label>
+          <input type="number" id="mat-min" min="0" placeholder="0" value="10">
+        </div>
+        <div class="form-group">
+          <label>Harga Satuan (Rp)</label>
+          <input type="number" id="mat-price" min="0" placeholder="0">
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>Catatan</label>
+          <input type="text" id="mat-notes" placeholder="Opsional…">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-material')">Batal</button>
+      <button class="btn btn-primary" onclick="saveMaterial()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== MODAL: TAMBAH/EDIT RECIPE ====== -->
+<div class="modal-overlay" id="modal-recipe">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-header">
+      <h3 id="modal-rec-title">Tambah Resep Produk</h3>
+      <button class="modal-close" onclick="closeModal('modal-recipe')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;margin-bottom:0;">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>Nama Produk *</label>
+          <input type="text" id="rec-name" placeholder="e.g. ZTM Spray Anti Bau Pesing 250ml">
+        </div>
+        <div class="form-group">
+          <label>SKU / Kode Produk</label>
+          <input type="text" id="rec-sku" placeholder="e.g. ZTM-SABP-250">
+        </div>
+        <div class="form-group">
+          <label>Ukuran / Varian</label>
+          <input type="text" id="rec-variant" placeholder="e.g. 250ml">
+        </div>
+      </div>
+      <hr class="section-divider" style="margin:16px 0;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:15px;color:var(--blue-dark);margin-bottom:10px;">BAHAN-BAHAN (per 1 unit produk)</div>
+      <div class="recipe-rows-wrap" id="recipe-rows"><!-- JS --></div>
+      <button class="btn btn-ghost btn-sm" onclick="addRecipeRow()">+ Tambah Bahan</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-recipe')">Batal</button>
+      <button class="btn btn-primary" onclick="saveRecipe()">Simpan Resep</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ====== APP LOGIC ====== -->
+<script>
+// =====================================================================
+// DATA STORE
+// =====================================================================
+window.APP = {
+  materials: {},
+  recipes: {},
+  productionLog: [],
+  editingMat: null,
+  editingRec: null,
+  selectedMats: new Set(),
+
+  save() {
+    localStorage.setItem('ztm_materials', JSON.stringify(this.materials));
+    localStorage.setItem('ztm_recipes', JSON.stringify(this.recipes));
+    localStorage.setItem('ztm_log', JSON.stringify(this.productionLog));
+    if (window.saveToFirebase) {
+      window.saveToFirebase('ztm', {
+        materials: this.materials,
+        recipes: this.recipes,
+        productionLog: this.productionLog
+      });
+    }
+  },
+
+  load() {
+    try {
+      const m = localStorage.getItem('ztm_materials');
+      const r = localStorage.getItem('ztm_recipes');
+      const l = localStorage.getItem('ztm_log');
+      if (m) this.materials = JSON.parse(m);
+      if (r) this.recipes = JSON.parse(r);
+      if (l) this.productionLog = JSON.parse(l);
+    } catch(e) {}
+  },
+
+  render() { this.renderAll(); },
+
+  renderAll() {
+    renderOverview();
+    renderMaterialsTable();
+    renderRecipesGrid();
+    renderProductionLog();
+    renderEstimation();
+    renderProdRows();
+  }
+};
+
+// =====================================================================
+// SEED DATA — default bahan & produk kalau belum ada data
+// =====================================================================
+function seedData() {
+  if (Object.keys(APP.materials).length > 0) return;
+
+  const materials = [
+    // Botol
+    { name: 'Botol 250ml (Spray)', category: 'Botol', unit: 'pcs', stock: 200, min: 50, price: 2500, notes: 'Botol trigger spray' },
+    { name: 'Botol 250ml (Tutup Klik)', category: 'Botol', unit: 'pcs', stock: 150, min: 50, price: 2000, notes: '' },
+    { name: 'Botol 500ml (Trigger)', category: 'Botol', unit: 'pcs', stock: 100, min: 30, price: 3500, notes: '' },
+    { name: 'Botol 500ml (Pump)', category: 'Botol', unit: 'pcs', stock: 80, min: 30, price: 4000, notes: 'Untuk Hand Wash' },
+    { name: 'Botol 1 Liter', category: 'Botol', unit: 'pcs', stock: 120, min: 40, price: 4500, notes: '' },
+    { name: 'Botol 100ml', category: 'Botol', unit: 'pcs', stock: 60, min: 20, price: 1800, notes: '' },
+    { name: 'Botol 70ml', category: 'Botol', unit: 'pcs', stock: 50, min: 20, price: 1500, notes: 'Biang Karbol' },
+    { name: 'Botol 60ml Spray', category: 'Botol', unit: 'pcs', stock: 70, min: 20, price: 1700, notes: 'Parfum Sepatu/Helm' },
+    { name: 'Kemasan 500g (Sachet/Plastik)', category: 'Botol', unit: 'pcs', stock: 60, min: 20, price: 1200, notes: 'Pemutih Pakaian' },
+
+    // Stiker
+    { name: 'Stiker ZTM Spray Anti Bau Pesing 250ml', category: 'Stiker', unit: 'pcs', stock: 200, min: 50, price: 500, notes: '' },
+    { name: 'Stiker ZTM Parfum Laundry 250ml', category: 'Stiker', unit: 'pcs', stock: 150, min: 40, price: 500, notes: '' },
+    { name: 'Stiker ZTM Parfum Laundry 1L', category: 'Stiker', unit: 'pcs', stock: 100, min: 30, price: 600, notes: '' },
+    { name: 'Stiker ZTM Pembersih Semen 500ml', category: 'Stiker', unit: 'pcs', stock: 80, min: 30, price: 600, notes: '' },
+    { name: 'Stiker ZTM Pembersih Kerak KM 1L', category: 'Stiker', unit: 'pcs', stock: 90, min: 30, price: 600, notes: '' },
+    { name: 'Stiker ZTM HP & Gadget 100ml', category: 'Stiker', unit: 'pcs', stock: 60, min: 20, price: 500, notes: '' },
+    { name: 'Stiker ZTM HP & Gadget 250ml', category: 'Stiker', unit: 'pcs', stock: 60, min: 20, price: 500, notes: '' },
+
+    // Bahan Baku
+    { name: 'Enzim Anti Bau (Konsentrat)', category: 'Bahan Baku', unit: 'liter', stock: 10, min: 3, price: 85000, notes: '' },
+    { name: 'Bahan Pembersih Semen (HCl Mix)', category: 'Bahan Baku', unit: 'liter', stock: 15, min: 5, price: 45000, notes: '' },
+    { name: 'Asam Sitrat', category: 'Bahan Baku', unit: 'kg', stock: 8, min: 2, price: 25000, notes: '' },
+    { name: 'Alkohol 70%', category: 'Bahan Baku', unit: 'liter', stock: 20, min: 5, price: 18000, notes: '' },
+    { name: 'Deterjen Cair Konsentrat', category: 'Bahan Baku', unit: 'liter', stock: 12, min: 4, price: 30000, notes: '' },
+    { name: 'Anti Klorin Konsentrat', category: 'Bahan Baku', unit: 'liter', stock: 8, min: 3, price: 55000, notes: '' },
+    { name: 'Minyak Cutting Oil Base', category: 'Bahan Baku', unit: 'liter', stock: 5, min: 2, price: 70000, notes: '' },
+    { name: 'Carbolic Acid (Karbol Konsentrat)', category: 'Bahan Baku', unit: 'liter', stock: 6, min: 2, price: 40000, notes: '' },
+    { name: 'Sodium Hipoklorit (Pemutih)', category: 'Bahan Baku', unit: 'kg', stock: 10, min: 3, price: 15000, notes: '' },
+    { name: 'Beeswax / Polish Base (Furniture)', category: 'Bahan Baku', unit: 'kg', stock: 4, min: 1, price: 120000, notes: '' },
+    { name: 'Anti-fog Agent', category: 'Bahan Baku', unit: 'liter', stock: 3, min: 1, price: 95000, notes: '' },
+    { name: 'Gliserin (Pelembut Tangan)', category: 'Bahan Baku', unit: 'liter', stock: 5, min: 2, price: 35000, notes: '' },
+    { name: 'Repellent Kucing (Aroma)', category: 'Bahan Baku', unit: 'liter', stock: 4, min: 1, price: 75000, notes: '' },
+    { name: 'Air Deionisasi / Aquades', category: 'Bahan Baku', unit: 'liter', stock: 100, min: 30, price: 2000, notes: '' },
+
+    // Parfum
+    { name: 'Bibit Parfum Laundry - Floral Bouquet', category: 'Parfum', unit: 'liter', stock: 2, min: 0.5, price: 180000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Fresh Linen', category: 'Parfum', unit: 'liter', stock: 2, min: 0.5, price: 180000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Lavender', category: 'Parfum', unit: 'liter', stock: 1.5, min: 0.5, price: 180000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Rose', category: 'Parfum', unit: 'liter', stock: 2, min: 0.5, price: 195000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Ocean Breeze', category: 'Parfum', unit: 'liter', stock: 1, min: 0.5, price: 175000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Vanilla', category: 'Parfum', unit: 'liter', stock: 1.5, min: 0.5, price: 185000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Jasmine', category: 'Parfum', unit: 'liter', stock: 2, min: 0.5, price: 190000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Citrus', category: 'Parfum', unit: 'liter', stock: 1, min: 0.5, price: 170000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Amber', category: 'Parfum', unit: 'liter', stock: 0.5, min: 0.5, price: 200000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Woody', category: 'Parfum', unit: 'liter', stock: 1, min: 0.5, price: 195000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Apple', category: 'Parfum', unit: 'liter', stock: 1.5, min: 0.5, price: 175000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Green Tea', category: 'Parfum', unit: 'liter', stock: 2, min: 0.5, price: 180000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Cherry', category: 'Parfum', unit: 'liter', stock: 0.8, min: 0.5, price: 185000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Melon', category: 'Parfum', unit: 'liter', stock: 1.2, min: 0.5, price: 170000, notes: '' },
+    { name: 'Bibit Parfum Laundry - Strawberry', category: 'Parfum', unit: 'liter', stock: 1, min: 0.5, price: 175000, notes: '' },
+
+    // Packaging
+    { name: 'Lakban / Solasi Coklat', category: 'Packaging', unit: 'roll', stock: 10, min: 3, price: 8000, notes: '' },
+    { name: 'Bubble Wrap', category: 'Packaging', unit: 'meter', stock: 50, min: 10, price: 3500, notes: '' },
+    { name: 'Kardus Box (kecil)', category: 'Packaging', unit: 'pcs', stock: 30, min: 10, price: 2500, notes: '' },
+    { name: 'Plastik OPP Seal', category: 'Packaging', unit: 'pcs', stock: 200, min: 50, price: 200, notes: '' },
+  ];
+
+  materials.forEach((m, i) => {
+    const id = 'mat_' + (Date.now() + i);
+    APP.materials[id] = { id, ...m, createdAt: Date.now() };
+  });
+
+  // Default recipes
+  const recipes = [
+    {
+      name: 'ZTM Spray Anti Bau Pesing 250ml',
+      sku: 'ZTM-SABP-250',
+      variant: '250ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Parfum Laundry 250ml',
+      sku: 'ZTM-PL-250',
+      variant: '250ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Parfum Laundry 1 Liter',
+      sku: 'ZTM-PL-1L',
+      variant: '1 Liter',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Pembersih Noda Semen 500ml',
+      sku: 'ZTM-PNS-500',
+      variant: '500ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Pembersih Kerak Kamar Mandi 1L',
+      sku: 'ZTM-PKKM-1L',
+      variant: '1 Liter',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Pembersih HP & Gadget 100ml',
+      sku: 'ZTM-PHG-100',
+      variant: '100ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Pembersih HP & Gadget 250ml',
+      sku: 'ZTM-PHG-250',
+      variant: '250ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Pembersih Kulkas 250ml',
+      sku: 'ZTM-PK-250',
+      variant: '250ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Waterspot Remover 250ml',
+      sku: 'ZTM-WR-250',
+      variant: '250ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Anti Klorin 1L',
+      sku: 'ZTM-AK-1L',
+      variant: '1 Liter',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Cutting Oil 100ml',
+      sku: 'ZTM-CO-100',
+      variant: '100ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Biang Karbol 70ml',
+      sku: 'ZTM-BK-70',
+      variant: '70ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Sabun Cuci Piring 1L',
+      sku: 'ZTM-SCP-1L',
+      variant: '1 Liter',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Parfum Sepatu & Helm 60ml',
+      sku: 'ZTM-PSH-60',
+      variant: '60ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Furniture Polish 500ml',
+      sku: 'ZTM-FP-500',
+      variant: '500ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Glass Cleaner 500ml',
+      sku: 'ZTM-GC-500',
+      variant: '500ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Hand Wash 500ml',
+      sku: 'ZTM-HW-500',
+      variant: '500ml',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Pemutih Pakaian 500g',
+      sku: 'ZTM-PP-500',
+      variant: '500g',
+      ingredients: []
+    },
+    {
+      name: 'ZTM Spray Pengusir Kucing',
+      sku: 'ZTM-SPK',
+      variant: 'Spray',
+      ingredients: []
+    },
+  ];
+
+  recipes.forEach((r, i) => {
+    const id = 'rec_' + (Date.now() + i);
+    APP.recipes[id] = { id, ...r, createdAt: Date.now() };
+  });
+
+  APP.save();
+}
+
+// =====================================================================
+// TABS
+// =====================================================================
+function switchTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  event.target.classList.add('active');
+
+  if (tab === 'estimation') renderEstimation();
+  if (tab === 'production') renderProdRows();
+}
+
+// =====================================================================
+// OVERVIEW
+// =====================================================================
+function renderOverview() {
+  const mats = Object.values(APP.materials);
+  const total = mats.length;
+  const lowStock = mats.filter(m => m.stock <= m.min && m.stock > 0).length;
+  const outStock = mats.filter(m => m.stock <= 0).length;
+  const okStock = total - lowStock - outStock;
+
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card blue">
+      <div class="stat-label">Total Item</div>
+      <div class="stat-value">${total}</div>
+      <div class="stat-sub">bahan & packaging terdaftar</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Stok Aman</div>
+      <div class="stat-value">${okStock}</div>
+      <div class="stat-sub">di atas minimum</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-label">Stok Menipis</div>
+      <div class="stat-value">${lowStock}</div>
+      <div class="stat-sub">perlu segera restock</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Habis</div>
+      <div class="stat-value">${outStock}</div>
+      <div class="stat-sub">stok = 0</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-label">Resep Produk</div>
+      <div class="stat-value">${Object.keys(APP.recipes).length}</div>
+      <div class="stat-sub">SKU terdaftar</div>
+    </div>
+  `;
+
+  // Alerts
+  const alerts = mats.filter(m => m.stock <= m.min);
+  const alertsHtml = alerts.length === 0 ? '' :
+    `<div class="alert ${alerts.some(m => m.stock <= 0) ? 'alert-danger' : 'alert-warning'}">
+      ⚠️ <strong>${alerts.length} item</strong> membutuhkan restock:
+      ${alerts.slice(0, 5).map(m => `<strong>${m.name}</strong> (${m.stock} ${m.unit})`).join(', ')}
+      ${alerts.length > 5 ? `…dan ${alerts.length - 5} lainnya` : ''}
+    </div>`;
+  document.getElementById('low-stock-alerts').innerHTML = alertsHtml;
+
+  // Table
+  const tbody = document.getElementById('overview-table-body');
+  if (mats.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--gray-400);">Belum ada data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = mats.sort((a,b) => a.stock - a.min - (b.stock - b.min)).map(m => {
+    const status = getStatus(m);
+    const pct = m.min > 0 ? Math.min(100, Math.round(m.stock / (m.min * 3) * 100)) : (m.stock > 0 ? 100 : 0);
+    const barColor = status === 'ok' ? 'var(--green)' : status === 'low' ? 'var(--orange)' : 'var(--red)';
+    return `<tr>
+      <td><strong>${m.name}</strong>${m.notes ? `<br><small style="color:var(--gray-400)">${m.notes}</small>` : ''}</td>
+      <td><span class="chip">${m.category}</span></td>
+      <td><strong style="font-size:16px;font-family:'Barlow Condensed',sans-serif;">${formatNum(m.stock)}</strong></td>
+      <td style="color:var(--gray-400)">${m.unit}</td>
+      <td style="color:var(--gray-400)">${formatNum(m.min)}</td>
+      <td><span class="stock-badge stock-${status}">${status === 'ok' ? '✓ Aman' : status === 'low' ? '⚠ Menipis' : '✕ Habis'}</span></td>
+      <td>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// =====================================================================
+// MATERIALS TABLE
+// =====================================================================
+function renderMaterialsTable() {
+  const search = document.getElementById('mat-search')?.value?.toLowerCase() || '';
+  const catFilter = document.getElementById('mat-cat-filter')?.value || '';
+  const mats = Object.values(APP.materials).filter(m => {
+    const matchSearch = m.name.toLowerCase().includes(search) || m.category.toLowerCase().includes(search);
+    const matchCat = !catFilter || m.category === catFilter;
+    return matchSearch && matchCat;
+  }).sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+
+  const tbody = document.getElementById('materials-table-body');
+  if (!tbody) return;
+
+  if (mats.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📦</div><p>Belum ada item. Klik "+ Tambah Item"</p></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = mats.map(m => {
+    const status = getStatus(m);
+    const isSelected = APP.selectedMats.has(m.id);
+    return `<tr class="${isSelected ? 'selected' : ''}">
+      <td style="text-align:center"><input type="checkbox" class="mat-check" data-id="${m.id}" ${isSelected ? 'checked' : ''} onchange="toggleSelect('${m.id}', this.checked)"></td>
+      <td><strong>${m.name}</strong>${m.notes ? `<br><small style="color:var(--gray-400)">${m.notes}</small>` : ''}</td>
+      <td><span class="chip">${m.category}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="number" value="${m.stock}" min="0" style="width:75px;padding:4px 8px;border:1.5px solid var(--gray-200);border-radius:6px;font-size:14px;font-weight:600;" onchange="quickUpdateStock('${m.id}', this.value)">
+        </div>
+      </td>
+      <td style="color:var(--gray-400)">${m.unit}</td>
+      <td style="color:var(--gray-400)">${formatNum(m.min)}</td>
+      <td style="color:var(--gray-400)">${m.price ? 'Rp ' + formatNum(m.price) : '-'}</td>
+      <td><span class="stock-badge stock-${status}">${status === 'ok' ? '✓ Aman' : status === 'low' ? '⚠ Menipis' : '✕ Habis'}</span></td>
+      <td>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="openEditMaterial('${m.id}')">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMaterial('${m.id}')">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  updateBulkBar();
+}
+
+function quickUpdateStock(id, val) {
+  if (!APP.materials[id]) return;
+  APP.materials[id].stock = parseFloat(val) || 0;
+  APP.save();
+  renderOverview();
+  renderEstimation();
+  showToast('Stok diperbarui ✓');
+}
+
+// =====================================================================
+// SELECTION & BULK EDIT
+// =====================================================================
+function toggleSelect(id, checked) {
+  if (checked) APP.selectedMats.add(id);
+  else APP.selectedMats.delete(id);
+  updateBulkBar();
+  renderMaterialsTable();
+}
+
+function toggleAllCheckboxes(masterCb) {
+  const checks = document.querySelectorAll('.mat-check');
+  checks.forEach(cb => {
+    APP.selectedMats[masterCb.checked ? 'add' : 'delete'](cb.dataset.id);
+    cb.checked = masterCb.checked;
+  });
+  updateBulkBar();
+  renderMaterialsTable();
+}
+
+function toggleSelectAll() {
+  const allIds = Object.keys(APP.materials);
+  if (APP.selectedMats.size === allIds.length) {
+    APP.selectedMats.clear();
+  } else {
+    allIds.forEach(id => APP.selectedMats.add(id));
+  }
+  renderMaterialsTable();
+}
+
+function clearSelection() {
+  APP.selectedMats.clear();
+  renderMaterialsTable();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-edit-bar');
+  const label = document.getElementById('bulk-count-label');
+  if (!bar) return;
+  if (APP.selectedMats.size > 0) {
+    bar.classList.add('visible');
+    label.textContent = APP.selectedMats.size + ' dipilih';
+  } else {
+    bar.classList.remove('visible');
+  }
+}
+
+function applyBulkEdit() {
+  const newStock = document.getElementById('bulk-stock-val').value;
+  const newMin = document.getElementById('bulk-min-val').value;
+  if (!newStock && !newMin) { showToast('Masukkan nilai stok atau minimum aman'); return; }
+
+  APP.selectedMats.forEach(id => {
+    if (APP.materials[id]) {
+      if (newStock !== '') APP.materials[id].stock = parseFloat(newStock) || 0;
+      if (newMin !== '') APP.materials[id].min = parseFloat(newMin) || 0;
+    }
+  });
+  APP.save();
+  clearSelection();
+  renderAll();
+  showToast(`✓ ${APP.selectedMats.size === 0 ? 'Item' : 'Item'} diperbarui massal`);
+}
+
+// =====================================================================
+// ADD / EDIT MATERIAL
+// =====================================================================
+function openAddMaterial() {
+  APP.editingMat = null;
+  document.getElementById('modal-mat-title').textContent = 'Tambah Item Bahan / Packaging';
+  ['mat-name','mat-unit','mat-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('mat-stock').value = '0';
+  document.getElementById('mat-min').value = '10';
+  document.getElementById('mat-price').value = '';
+  document.getElementById('mat-category').value = 'Bahan Baku';
+  openModal('modal-material');
+}
+
+function openEditMaterial(id) {
+  const m = APP.materials[id];
+  if (!m) return;
+  APP.editingMat = id;
+  document.getElementById('modal-mat-title').textContent = 'Edit Item';
+  document.getElementById('mat-name').value = m.name;
+  document.getElementById('mat-category').value = m.category;
+  document.getElementById('mat-unit').value = m.unit;
+  document.getElementById('mat-stock').value = m.stock;
+  document.getElementById('mat-min').value = m.min;
+  document.getElementById('mat-price').value = m.price || '';
+  document.getElementById('mat-notes').value = m.notes || '';
+  openModal('modal-material');
+}
+
+function saveMaterial() {
+  const name = document.getElementById('mat-name').value.trim();
+  const unit = document.getElementById('mat-unit').value.trim();
+  if (!name || !unit) { showToast('Nama dan satuan wajib diisi!'); return; }
+
+  const data = {
+    name,
+    category: document.getElementById('mat-category').value,
+    unit,
+    stock: parseFloat(document.getElementById('mat-stock').value) || 0,
+    min: parseFloat(document.getElementById('mat-min').value) || 0,
+    price: parseFloat(document.getElementById('mat-price').value) || 0,
+    notes: document.getElementById('mat-notes').value.trim(),
+  };
+
+  if (APP.editingMat) {
+    APP.materials[APP.editingMat] = { ...APP.materials[APP.editingMat], ...data };
+  } else {
+    const id = 'mat_' + Date.now();
+    APP.materials[id] = { id, ...data, createdAt: Date.now() };
+  }
+
+  APP.save();
+  closeModal('modal-material');
+  renderAll();
+  showToast('Item disimpan ✓');
+}
+
+function deleteMaterial(id) {
+  if (!confirm('Hapus item ini?')) return;
+  delete APP.materials[id];
+  APP.save();
+  renderAll();
+  showToast('Item dihapus');
+}
+
+// =====================================================================
+// RECIPES
+// =====================================================================
+function renderRecipesGrid() {
+  const recs = Object.values(APP.recipes);
+  const grid = document.getElementById('recipes-grid');
+  if (!grid) return;
+  if (recs.length === 0) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📋</div><p>Belum ada resep. Klik "+ Tambah Resep"</p></div>';
+    return;
+  }
+
+  grid.innerHTML = recs.map(r => {
+    const ingHtml = r.ingredients && r.ingredients.length > 0
+      ? r.ingredients.map(ing => {
+          const mat = ing.matId && APP.materials[ing.matId];
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--gray-100);font-size:13px;">
+            <span>${mat ? mat.name : ing.matName || '?'}</span>
+            <span style="font-weight:600;color:var(--blue)">${ing.qty} ${mat ? mat.unit : ing.unit || ''}</span>
+          </div>`;
+        }).join('')
+      : '<div style="color:var(--gray-400);font-size:13px;padding:8px 0;">Belum ada bahan — klik edit untuk isi resep</div>';
+
+    return `<div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">${r.name}</div>
+          ${r.sku ? `<div style="font-size:11px;color:var(--gray-400);margin-top:2px;">${r.sku}${r.variant ? ' · ' + r.variant : ''}</div>` : ''}
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-ghost btn-sm" onclick="openEditRecipe('${r.id}')">✏️ Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteRecipe('${r.id}')">🗑</button>
+        </div>
+      </div>
+      <div style="padding:14px 18px;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--gray-400);margin-bottom:6px;">Bahan per 1 unit:</div>
+        ${ingHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Recipe row management
+let recipeRowCount = 0;
+function addRecipeRow(matId='', qty='', unit='') {
+  const wrap = document.getElementById('recipe-rows');
+  const rowId = 'rrow_' + (++recipeRowCount);
+  const mats = Object.values(APP.materials);
+  const options = mats.map(m => `<option value="${m.id}" ${m.id === matId ? 'selected' : ''}>${m.name} (${m.unit})</option>`).join('');
+
+  const row = document.createElement('div');
+  row.className = 'recipe-row';
+  row.id = rowId;
+  row.innerHTML = `
+    <select class="rrow-mat" onchange="updateRecipeRowUnit(this, '${rowId}')">
+      <option value="">-- Pilih Bahan --</option>
+      ${options}
+    </select>
+    <input type="number" class="rrow-qty" min="0" step="0.01" placeholder="Jumlah" value="${qty}" style="padding:8px;border:1.5px solid var(--gray-200);border-radius:6px;font-size:13px;">
+    <input type="text" class="rrow-unit" placeholder="Satuan" value="${unit}" readonly style="padding:8px;border:1.5px solid var(--gray-200);border-radius:6px;font-size:13px;background:var(--gray-50);">
+    <button class="btn btn-danger btn-sm" onclick="document.getElementById('${rowId}').remove()">✕</button>
+  `;
+  wrap.appendChild(row);
+
+  if (matId) {
+    const sel = row.querySelector('.rrow-mat');
+    const mat = APP.materials[matId];
+    if (mat) row.querySelector('.rrow-unit').value = mat.unit;
+  }
+}
+
+function updateRecipeRowUnit(sel, rowId) {
+  const mat = APP.materials[sel.value];
+  if (mat) document.querySelector(`#${rowId} .rrow-unit`).value = mat.unit;
+}
+
+function openAddRecipe() {
+  APP.editingRec = null;
+  document.getElementById('modal-rec-title').textContent = 'Tambah Resep Produk';
+  document.getElementById('rec-name').value = '';
+  document.getElementById('rec-sku').value = '';
+  document.getElementById('rec-variant').value = '';
+  document.getElementById('recipe-rows').innerHTML = '';
+  recipeRowCount = 0;
+  addRecipeRow();
+  openModal('modal-recipe');
+}
+
+function openEditRecipe(id) {
+  const r = APP.recipes[id];
+  if (!r) return;
+  APP.editingRec = id;
+  document.getElementById('modal-rec-title').textContent = 'Edit Resep';
+  document.getElementById('rec-name').value = r.name;
+  document.getElementById('rec-sku').value = r.sku || '';
+  document.getElementById('rec-variant').value = r.variant || '';
+  document.getElementById('recipe-rows').innerHTML = '';
+  recipeRowCount = 0;
+  if (r.ingredients && r.ingredients.length > 0) {
+    r.ingredients.forEach(ing => addRecipeRow(ing.matId, ing.qty, ing.unit));
+  } else {
+    addRecipeRow();
+  }
+  openModal('modal-recipe');
+}
+
+function saveRecipe() {
+  const name = document.getElementById('rec-name').value.trim();
+  if (!name) { showToast('Nama produk wajib diisi!'); return; }
+
+  const rows = document.querySelectorAll('#recipe-rows .recipe-row');
+  const ingredients = [];
+  rows.forEach(row => {
+    const matId = row.querySelector('.rrow-mat').value;
+    const qty = parseFloat(row.querySelector('.rrow-qty').value);
+    const unit = row.querySelector('.rrow-unit').value;
+    if (matId && qty > 0) {
+      const mat = APP.materials[matId];
+      ingredients.push({ matId, matName: mat ? mat.name : '', qty, unit: unit || (mat ? mat.unit : '') });
+    }
+  });
+
+  const data = {
+    name,
+    sku: document.getElementById('rec-sku').value.trim(),
+    variant: document.getElementById('rec-variant').value.trim(),
+    ingredients,
+  };
+
+  if (APP.editingRec) {
+    APP.recipes[APP.editingRec] = { ...APP.recipes[APP.editingRec], ...data };
+  } else {
+    const id = 'rec_' + Date.now();
+    APP.recipes[id] = { id, ...data, createdAt: Date.now() };
+  }
+  APP.save();
+  closeModal('modal-recipe');
+  renderAll();
+  showToast('Resep disimpan ✓');
+}
+
+function deleteRecipe(id) {
+  if (!confirm('Hapus resep ini?')) return;
+  delete APP.recipes[id];
+  APP.save();
+  renderAll();
+  showToast('Resep dihapus');
+}
+
+// =====================================================================
+// PRODUCTION
+// =====================================================================
+let prodRowCount = 0;
+function renderProdRows() {
+  const wrap = document.getElementById('prod-rows');
+  if (!wrap) return;
+  if (wrap.children.length === 0) addProdRow();
+  // Set today's date
+  const dateInput = document.getElementById('prod-date');
+  if (dateInput && !dateInput.value) dateInput.value = new Date().toISOString().split('T')[0];
+}
+
+function addProdRow() {
+  const wrap = document.getElementById('prod-rows');
+  const rowId = 'prow_' + (++prodRowCount);
+  const recs = Object.values(APP.recipes);
+  const options = recs.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  const row = document.createElement('div');
+  row.className = 'prod-row';
+  row.id = rowId;
+  row.innerHTML = `
+    <select class="prow-rec" onchange="previewProduction()">
+      <option value="">-- Pilih Produk --</option>
+      ${options}
+    </select>
+    <div style="display:flex;gap:4px;align-items:center;">
+      <input type="number" class="prow-qty" min="1" value="1" placeholder="Qty" style="width:65px;padding:8px;border:1.5px solid var(--gray-200);border-radius:6px;font-size:13px;" oninput="previewProduction()">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('${rowId}').remove();previewProduction()" style="padding:6px 8px;">✕</button>
+    </div>
+  `;
+  wrap.appendChild(row);
+}
+
+function previewProduction() {
+  const rows = document.querySelectorAll('.prod-row');
+  const usage = {};
+  rows.forEach(row => {
+    const recId = row.querySelector('.prow-rec')?.value;
+    const qty = parseInt(row.querySelector('.prow-qty')?.value) || 0;
+    if (!recId || qty === 0) return;
+    const rec = APP.recipes[recId];
+    if (!rec || !rec.ingredients) return;
+    rec.ingredients.forEach(ing => {
+      if (!usage[ing.matId]) usage[ing.matId] = { total: 0, unit: ing.unit, name: ing.matName };
+      usage[ing.matId].total += ing.qty * qty;
+    });
+  });
+
+  const preview = document.getElementById('prod-preview');
+  const content = document.getElementById('prod-preview-content');
+  const entries = Object.entries(usage);
+
+  if (entries.length === 0) { preview.style.display = 'none'; return; }
+  preview.style.display = 'block';
+
+  content.innerHTML = entries.map(([id, u]) => {
+    const mat = APP.materials[id];
+    const currentStock = mat ? mat.stock : 0;
+    const afterStock = currentStock - u.total;
+    const color = afterStock < 0 ? 'var(--red)' : afterStock <= (mat ? mat.min : 0) ? 'var(--orange)' : 'var(--green)';
+    return `<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;">
+      <span>${mat ? mat.name : u.name}</span>
+      <span>
+        <span style="color:var(--gray-400)">${formatNum(currentStock)} ${u.unit}</span>
+        → <strong style="color:${color}">${formatNum(afterStock)} ${u.unit}</strong>
+        ${afterStock < 0 ? ' <span style="color:var(--red);">⚠ KURANG!</span>' : ''}
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function submitProduction() {
+  const rows = document.querySelectorAll('.prod-row');
+  const items = [];
+
+  rows.forEach(row => {
+    const recId = row.querySelector('.prow-rec')?.value;
+    const qty = parseInt(row.querySelector('.prow-qty')?.value) || 0;
+    if (recId && qty > 0) items.push({ recId, qty });
+  });
+
+  if (items.length === 0) { showToast('Pilih produk yang diproduksi!'); return; }
+
+  // Check stock sufficiency
+  const usage = {};
+  let errors = [];
+  items.forEach(item => {
+    const rec = APP.recipes[item.recId];
+    if (!rec || !rec.ingredients) return;
+    rec.ingredients.forEach(ing => {
+      if (!usage[ing.matId]) usage[ing.matId] = 0;
+      usage[ing.matId] += ing.qty * item.qty;
+    });
+  });
+
+  Object.entries(usage).forEach(([id, needed]) => {
+    const mat = APP.materials[id];
+    if (mat && mat.stock < needed) {
+      errors.push(`${mat.name}: butuh ${formatNum(needed)} ${mat.unit}, tersedia ${formatNum(mat.stock)}`);
+    }
+  });
+
+  if (errors.length > 0) {
+    if (!confirm(`⚠️ Stok tidak cukup:\n${errors.join('\n')}\n\nLanjutkan tetap?`)) return;
+  }
+
+  // Deduct stock
+  Object.entries(usage).forEach(([id, needed]) => {
+    if (APP.materials[id]) {
+      APP.materials[id].stock = Math.max(0, APP.materials[id].stock - needed);
+    }
+  });
+
+  // Log
+  const log = {
+    date: document.getElementById('prod-date').value,
+    note: document.getElementById('prod-note').value,
+    items: items.map(i => {
+      const r = APP.recipes[i.recId];
+      return { name: r ? r.name : i.recId, qty: i.qty };
+    }),
+    timestamp: Date.now()
+  };
+  APP.productionLog.unshift(log);
+  if (APP.productionLog.length > 100) APP.productionLog.pop();
+
+  APP.save();
+  renderAll();
+  // Reset form
+  document.getElementById('prod-rows').innerHTML = '';
+  prodRowCount = 0;
+  addProdRow();
+  document.getElementById('prod-note').value = '';
+  document.getElementById('prod-preview').style.display = 'none';
+  showToast('✓ Produksi dicatat & stok dikurangi!');
+}
+
+function renderProductionLog() {
+  const wrap = document.getElementById('production-log');
+  if (!wrap) return;
+  if (APP.productionLog.length === 0) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>Belum ada log produksi</p></div>';
+    return;
+  }
+  wrap.innerHTML = APP.productionLog.slice(0, 30).map(log => `
+    <div class="log-item">
+      <div class="log-dot"></div>
+      <div>
+        <div style="font-size:12px;color:var(--gray-400);margin-bottom:3px;">${log.date || '-'} ${log.note ? `· ${log.note}` : ''}</div>
+        ${log.items.map(i => `<div style="font-size:13px;"><strong>${i.qty}x</strong> ${i.name}</div>`).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// =====================================================================
+// ESTIMATION
+// =====================================================================
+function renderEstimation() {
+  const content = document.getElementById('estimation-content');
+  if (!content) return;
+
+  const recs = Object.values(APP.recipes);
+  const results = [];
+
+  recs.forEach(r => {
+    if (!r.ingredients || r.ingredients.length === 0) {
+      results.push({ name: r.name, sku: r.sku, max: null, missing: [], noRecipe: true });
+      return;
+    }
+
+    let maxUnits = Infinity;
+    const missing = [];
+
+    r.ingredients.forEach(ing => {
+      const mat = APP.materials[ing.matId];
+      if (!mat) { missing.push(ing.matName || ing.matId); return; }
+      if (ing.qty > 0) {
+        const possible = Math.floor(mat.stock / ing.qty);
+        maxUnits = Math.min(maxUnits, possible);
+      }
+    });
+
+    if (maxUnits === Infinity) maxUnits = 0;
+    results.push({ name: r.name, sku: r.sku, max: maxUnits, missing });
+  });
+
+  results.sort((a, b) => {
+    if (a.noRecipe && !b.noRecipe) return 1;
+    if (!a.noRecipe && b.noRecipe) return -1;
+    return (b.max || 0) - (a.max || 0);
+  });
+
+  const canMake = results.filter(r => !r.noRecipe && r.max > 0);
+  const cantMake = results.filter(r => !r.noRecipe && r.max === 0);
+  const noRecipe = results.filter(r => r.noRecipe);
+
+  content.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:24px;">
+      <div class="stat-card green">
+        <div class="stat-label">Bisa Diproduksi</div>
+        <div class="stat-value">${canMake.length}</div>
+        <div class="stat-sub">SKU ada stoknya</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-label">Tidak Bisa Diproduksi</div>
+        <div class="stat-value">${cantMake.length}</div>
+        <div class="stat-sub">stok tidak cukup</div>
+      </div>
+      <div class="stat-card yellow">
+        <div class="stat-label">Belum Ada Resep</div>
+        <div class="stat-value">${noRecipe.length}</div>
+        <div class="stat-sub">perlu isi resep</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header"><div class="card-title">✅ Bisa Diproduksi Sekarang</div></div>
+      <div class="table-wrap">
+        <table class="est-table">
+          <thead><tr><th>Produk</th><th>SKU</th><th>Maks. Produksi</th><th>Keterangan</th></tr></thead>
+          <tbody>
+            ${canMake.length === 0 ? '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--gray-400)">Tidak ada produk yang bisa diproduksi saat ini</td></tr>' :
+              canMake.map(r => `<tr>
+                <td><strong>${r.name}</strong></td>
+                <td style="color:var(--gray-400)">${r.sku || '-'}</td>
+                <td>
+                  <span style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;color:${r.max >= 50 ? 'var(--green)' : r.max >= 20 ? 'var(--orange)' : 'var(--red)'}">
+                    ${r.max}
+                  </span>
+                  <span style="font-size:13px;color:var(--gray-400)"> unit</span>
+                </td>
+                <td style="font-size:12px;color:var(--gray-400)">
+                  ${r.max < 10 ? '⚠ Stok bahan hampir habis' : r.max < 30 ? 'Segera restock bahan' : '✓ Cukup'}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    ${cantMake.length > 0 ? `
+    <div class="card" style="margin-bottom:20px;">
+      <div class="card-header"><div class="card-title">❌ Tidak Bisa Diproduksi (stok bahan habis)</div></div>
+      <div style="padding:14px 18px;">
+        ${cantMake.map(r => `<div style="padding:8px 0;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-size:14px;">${r.name}</span>
+          <span class="stock-badge stock-out">✕ 0 unit</span>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
+
+    ${noRecipe.length > 0 ? `
+    <div class="card">
+      <div class="card-header"><div class="card-title" style="color:var(--gray-400)">📋 Perlu Isi Resep Dulu</div></div>
+      <div style="padding:14px 18px;">
+        ${noRecipe.map(r => `<div style="padding:6px 0;border-bottom:1px solid var(--gray-100);font-size:14px;color:var(--gray-400)">
+          ${r.name}
+          <a href="#" onclick="switchTabByName('recipes')" style="font-size:12px;color:var(--blue);margin-left:8px;">+ Isi Resep</a>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
+  `;
+}
+
+function switchTabByName(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.getAttribute('onclick').includes("'" + tab + "'")) {
+      b.click();
+    }
+  });
+}
+
+// =====================================================================
+// MODAL HELPERS
+// =====================================================================
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) closeModal(e.target.id);
+});
+
+// =====================================================================
+// TOAST
+// =====================================================================
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.style.display = 'none', 2800);
+}
+
+// =====================================================================
+// UTILS
+// =====================================================================
+function getStatus(m) {
+  if (m.stock <= 0) return 'out';
+  if (m.stock <= m.min) return 'low';
+  return 'ok';
+}
+
+function formatNum(n) {
+  if (n === null || n === undefined) return '-';
+  return parseFloat(n).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+}
+
+function renderAll() {
+  renderOverview();
+  renderMaterialsTable();
+  renderRecipesGrid();
+  renderProductionLog();
+  renderEstimation();
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  APP.load();
+  seedData();
+  renderAll();
+  renderProdRows();
+
+  // Keyboard shortcut
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    }
+  });
+});
+
+// Also render after firebase might update
+setTimeout(() => {
+  APP.load();
+  renderAll();
+}, 2000);
+</script>
+
+<!-- Responsive fix for production layout -->
+<style>
+@media (max-width: 900px) {
+  .prod-layout { grid-template-columns: 1fr !important; }
+}
+</style>
+
+</body>
+</html>
